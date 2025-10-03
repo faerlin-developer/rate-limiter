@@ -1,7 +1,6 @@
-package store
+package db
 
 import (
-	"fmt"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"sync"
 )
@@ -24,18 +23,11 @@ func NewInMemoryStore[K comparable, V any](capacity int) (*InMemoryStore[K, V], 
 	}, nil
 }
 
-func (s *InMemoryStore[K, V]) Get(key K) (V, error) {
+func (s *InMemoryStore[K, V]) Get(key K) (V, bool) {
 
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
-
-	value, ok := s.cache.Get(key)
-	if !ok {
-		var zero V
-		return zero, fmt.Errorf("failed to find key: %s", key)
-	}
-
-	return value, nil
+	return s.cache.Get(key)
 }
 
 func (s *InMemoryStore[K, V]) Put(key K, value V) bool {
