@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/faerlin-developer/rate-limiter.git/db"
-	"sync"
 	"time"
 )
 
@@ -12,7 +11,6 @@ type TBLimiter struct {
 	bucketCapacity int           // maximum number of tokens at any time
 	refillInterval time.Duration // refill interval of token
 	store          TBStore       // key-value store for token-bucket algorithm
-	muByKey        sync.Map      // Maps a key to a mutex
 }
 
 type TBStore = db.Store[string, Bucket]
@@ -113,24 +111,4 @@ func (l *TBLimiter) Wait(ctx context.Context, key string) error {
 	l.store.Put(key, bucket)
 
 	return err
-}
-
-// lockFor returns the *same* mutex for the same key every time.
-func (l *TBLimiter) lockFor(key string) *sync.Mutex {
-	// Fast path: does a concurrent read; if present, reuse it.
-	if v, ok := l.muByKey.Load(key); ok {
-		return v.(*sync.Mutex)
-	}
-
-	// Slow path: allocate a new mutex candidate.
-	m := &sync.Mutex{}
-
-	// Atomically publish the mutex if key absent; otherwise reuse existing.
-	actual, loaded := l.muByKey.LoadOrStore(key, m)
-	if loaded {
-		// Someone else stored one first; discard ours and use theirs.
-		return actual.(*sync.Mutex)
-	}
-	// We successfully installed our new mutex.
-	return m
 }

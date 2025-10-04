@@ -5,15 +5,20 @@ import (
 	"sync"
 )
 
+type Entry[V any] struct {
+	value      V
+	perKeyLock *sync.Mutex
+}
+
 // LRU cache
 type InMemoryStore[K comparable, V any] struct {
-	cache *lru.Cache[K, V]
+	cache *lru.Cache[K, Entry[V]]
 	mutex sync.RWMutex // zero value; ready to use
 }
 
 func NewInMemoryStore[K comparable, V any](capacity int) (*InMemoryStore[K, V], error) {
 
-	cache, err := lru.New[K, V](capacity)
+	cache, err := lru.New[K, Entry[V]](capacity)
 	if err != nil {
 		return nil, err
 	}
@@ -27,12 +32,24 @@ func (s *InMemoryStore[K, V]) Get(key K) (V, bool) {
 
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
-	return s.cache.Get(key)
+	entry, ok := s.cache.Get(key)
+	return entry.value, ok
 }
 
-func (s *InMemoryStore[K, V]) Put(key K, value V) bool {
+func (s *InMemoryStore[K, V]) Put(key K, value V) {
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	return s.cache.Add(key, value)
+
+	if s.cache.Contains(key) {
+		entry, _ := s.cache.Get(key)
+		entry.value = value
+		s.cache.Add(key, entry)
+	} else {
+		entry := Entry[V]{
+			value:      value,
+			perKeyLock: &sync.Mutex{},
+		}
+		s.cache.Add(key, entry)
+	}
 }
