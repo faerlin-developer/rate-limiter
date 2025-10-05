@@ -1,0 +1,10 @@
+package ratelimit
+
+import (
+	"fmt"
+	"testing"
+)
+
+func TestHelloName(t *testing.T) {
+	fmt.Println("Hello")
+}
