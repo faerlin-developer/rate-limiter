@@ -1,5 +1,7 @@
 
-run:
+.PHONY: demo test
+
+demo:
 	go run demo/main.go
 
 test:
