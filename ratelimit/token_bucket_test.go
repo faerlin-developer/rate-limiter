@@ -11,6 +11,7 @@ import (
 
 func Test_Allow_SameKey_ConsumesAndRefillsToken(t *testing.T) {
 
+	// Create rate limiter with 1 token/second and bucket capacity of 1
 	limiter, testClock := newTestFixture(t, 1, 1)
 	ctx := context.Background()
 
@@ -35,6 +36,7 @@ func Test_Allow_SameKey_ConsumesAndRefillsToken(t *testing.T) {
 
 func Test_Allow_DifferentKeys_ConsumeTokens(t *testing.T) {
 
+	// Create rate limiter with 1 token/second and bucket capacity of 1
 	limiter, _ := newTestFixture(t, 1, 1)
 	ctx := context.Background()
 
@@ -49,15 +51,20 @@ func Test_Allow_DifferentKeys_ConsumeTokens(t *testing.T) {
 	}
 }
 
-func Test_Allow_ConcurrentSameKey(t *testing.T) {
+func Test_Allow_ConcurrentSameKey_ConsumeExactlyOneToken(t *testing.T) {
 
+	// Create rate limiter with 1 token/second and bucket capacity of 1
 	limiter, _ := newTestFixture(t, 1, 1)
 	ctx := context.Background()
 
+	// Wait group for two goroutines
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	// Will contain the output of calling Allow by two goroutines
 	results := make([]bool, 2)
+
+	// Launch two goroutines that calls Allow on the same key
 	for i := 0; i < 2; i++ {
 		go func(index int) {
 			defer wg.Done()
@@ -67,30 +74,32 @@ func Test_Allow_ConcurrentSameKey(t *testing.T) {
 
 	wg.Wait()
 
-	// Exactly one true, one false.
-	trueCount := 0
-	for _, r := range results {
-		if r {
-			trueCount++
+	// Count the number of pass issued by Allow
+	passCount := 0
+	for _, isAllowed := range results {
+		if isAllowed {
+			passCount++
 		}
 	}
 
-	if trueCount != 1 {
+	// Expect only one pass from the two calls on Allow on the same key
+	if passCount != 1 {
 		t.Fatalf("Allow concurrency: got %v, want exactly one true", results)
 	}
 }
 
-func Test_Wait_BlocksUntilRefill(t *testing.T) {
+func Test_Wait_SameKey_BlocksUntilRefill(t *testing.T) {
 
-	// 2 tokens per second
+	// Create rate limiter with 2 token/second and bucket capacity of 1
 	limiter, testClock := newTestFixture(t, 2, 1)
 	ctx := context.Background()
 
-	// Drain the single token.
+	// Drain the single token from the bucket by calling Allow(k)
 	if !limiter.Allow(ctx, "k") {
 		t.Fatal("precondition failed; expected first Allow to succeed")
 	}
 
+	// Launch goroutine that calls Wait(k)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -103,14 +112,17 @@ func Test_Wait_BlocksUntilRefill(t *testing.T) {
 	select {
 	case <-done:
 		t.Fatal("Wait returned before refill; should be blocked")
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond):
+		break
 	}
 
 	// Forward the block by 500 ms to replenish one token
 	testClock.Forward(500 * time.Millisecond)
 
+	// Show that Wait(k) is no longer blocking
 	select {
 	case <-done:
+		break
 	case <-time.After(50 * time.Millisecond):
 		t.Fatal("Wait did not return after token became available")
 	}
@@ -118,21 +130,25 @@ func Test_Wait_BlocksUntilRefill(t *testing.T) {
 
 func Test_Wait_ContextCancel(t *testing.T) {
 
+	// Create rate limiter with 2 token/second and bucket capacity of 1
 	limiter, _ := newTestFixture(t, 1, 1)
 
-	// Drain the single token.
+	// Drain the single token from the bucket by calling Allow(k)
 	if !limiter.Allow(context.Background(), "k") {
 		t.Fatal("precondition failed; expected first Allow to succeed")
 	}
 
+	// Create a context with timeout
 	ctxWithCancel, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
 	defer cancel()
 
+	// Call Wait(k) without advancing the clock
 	err := limiter.Wait(ctxWithCancel, "k")
 	if err == nil {
 		t.Fatal("Wait returned nil; want context error")
 	}
 
+	// Expect deny due to timeout
 	var e *DeniedError
 	if !errors.As(err, &e) {
 		t.Fatal("Wait return unexpected error type; want DeniedError")
@@ -141,18 +157,22 @@ func Test_Wait_ContextCancel(t *testing.T) {
 
 func Test_Wait_ConcurrentSameKey_OnlyOneProceedsImmediately(t *testing.T) {
 
+	// Create rate limiter with 1 token/second and bucket capacity of 1
 	limiter, testClock := newTestFixture(t, 1, 1)
 
-	// one token available now
+	numThreads := 2
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(numThreads)
 
-	results := make([]error, 2)
-	results[0] = NewDeniedError("denied")
-	results[1] = NewDeniedError("denied")
+	// Initialize result array with non-nil errors
+	results := make([]error, numThreads)
+	for i, _ := range results {
+		results[i] = NewDeniedError("")
+	}
 
-	for i := 0; i < 2; i++ {
+	// Launch goroutines that call Wait(k) on the same key
+	for i := 0; i < numThreads; i++ {
 		go func(index int) {
 			defer wg.Done()
 			<-start
@@ -163,17 +183,25 @@ func Test_Wait_ConcurrentSameKey_OnlyOneProceedsImmediately(t *testing.T) {
 	close(start)
 
 	// Let the first waiter take the immediate token; the second should block until we advance time.
-	time.Sleep(50 * time.Millisecond) // scheduling only; not for timing logic
+	time.Sleep(50 * time.Millisecond)
 
-	// No time advanced yet: exactly one should be done.
-	if (results[0] == nil && results[1] == nil) || (results[0] != nil && results[1] != nil) {
+	// At this point, we expect only one call on Wait(k) to return and pass
+	passCount := 0
+	for i, _ := range results {
+		if results[i] == nil {
+			passCount++
+		}
+	}
+
+	if passCount != 1 {
 		t.Fatalf("after start: done not 1, want 1")
 	}
 
-	testClock.Forward(1 * time.Second) // refill another token
-	wg.Wait()                          // wait for the
+	// Forward the time to refill another token
+	testClock.Forward(1 * time.Second)
+	wg.Wait()
 
-	// Both should succeed
+	// Both calls on Wait(k) should have succeed
 	for i, err := range results {
 		if err != nil {
 			t.Fatalf("Waiter %d error = %v; want nil", i, err)
@@ -181,11 +209,13 @@ func Test_Wait_ConcurrentSameKey_OnlyOneProceedsImmediately(t *testing.T) {
 	}
 }
 
+// newTestClock returns an instance of the TestClock with a starting time at 2000-01-01.
 func newTestClock() *clock.TestClock {
 	startTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 	return clock.NewTestClock(startTime)
 }
 
+// newTestFixture returns a rate limiter for testing.
 func newTestFixture(t *testing.T, tokensPerSecond int, bucketCapacity int) (*TBLimiter, *clock.TestClock) {
 
 	testClock := newTestClock()
