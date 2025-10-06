@@ -1,13 +1,13 @@
 package ratelimit
 
-import (
-	"fmt"
-)
-
-type Error struct {
+type DeniedError struct {
 	Reason string
 }
 
-func (e *Error) Error() string {
-	return fmt.Sprintf("failed")
+func NewDeniedError(reason string) *DeniedError {
+	return &DeniedError{reason}
+}
+
+func (e DeniedError) Error() string {
+	return e.Reason
 }
