@@ -5,15 +5,16 @@ import (
 	"sync"
 )
 
+// Record wraps the value with a per-key lock.
 type Record[V any] struct {
 	value      V
 	perKeyLock *sync.Mutex
 }
 
-// LRU cache
+// InMemoryCache is an in-memory implementation of the Cache interface.
 type InMemoryCache[K comparable, V any] struct {
 	cache *lru.Cache[K, Record[V]]
-	mutex sync.RWMutex // zero value; ready to use
+	mutex sync.RWMutex
 }
 
 func NewInMemoryCache[K comparable, V any](capacity int) (*InMemoryCache[K, V], error) {
@@ -42,10 +43,12 @@ func (s *InMemoryCache[K, V]) Put(key K, value V) {
 	defer s.mutex.Unlock()
 
 	if s.cache.Contains(key) {
+		// Update the inner value of the existing record
 		record, _ := s.cache.Get(key)
 		record.value = value
 		s.cache.Add(key, record)
 	} else {
+		// Add new record into cache
 		record := Record[V]{
 			value:      value,
 			perKeyLock: &sync.Mutex{},
@@ -54,17 +57,18 @@ func (s *InMemoryCache[K, V]) Put(key K, value V) {
 	}
 }
 
-// return true if stored
 func (s *InMemoryCache[K, V]) GetOrStore(key K, value V) (V, bool) {
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
+	// Fast path: return the existing value
 	record, ok := s.cache.Get(key)
 	if ok {
 		return record.value, false
 	}
 
+	// Slow path: add new record into cache
 	record = Record[V]{
 		value:      value,
 		perKeyLock: &sync.Mutex{},

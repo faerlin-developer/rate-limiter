@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func Test_Allow_ConsumesAndRefills(t *testing.T) {
+func Test_Allow_SameKey_ConsumesAndRefillsToken(t *testing.T) {
 
 	limiter, testClock := newTestFixture(t, 1, 1)
 	ctx := context.Background()
@@ -33,7 +33,7 @@ func Test_Allow_ConsumesAndRefills(t *testing.T) {
 	}
 }
 
-func Test_Allow_PerKeyIsolation(t *testing.T) {
+func Test_Allow_DifferentKeys_ConsumeTokens(t *testing.T) {
 
 	limiter, _ := newTestFixture(t, 1, 1)
 	ctx := context.Background()
@@ -74,7 +74,7 @@ func Test_Allow_ConcurrentSameKey(t *testing.T) {
 			trueCount++
 		}
 	}
-	
+
 	if trueCount != 1 {
 		t.Fatalf("Allow concurrency: got %v, want exactly one true", results)
 	}

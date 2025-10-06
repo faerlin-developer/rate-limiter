@@ -13,13 +13,8 @@ const (
 	DefaultCacheCapacity   = 100
 )
 
-// Option ...
 type Option func(limiter *TBLimiter) error
-
-// Clock ...
 type Clock clock.Clock
-
-// TBCache ...
 type TBCache db.Cache[string, Bucket]
 
 func WithTokensPerSecond(tokensPerSecond int) Option {
