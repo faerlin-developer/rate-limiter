@@ -19,8 +19,8 @@ __Cache__: The rate limiter keeps per-key state in a cache to make quick allow/d
 | Eviction Policy | Pros                                                              | Cons                                                             | Best for workloads with          |
 |-----------------|-------------------------------------------------------------------|------------------------------------------------------------------|----------------------------------|
 | LRU             | Keeps frequently used keys in cache                               | Sudden burst of many one-off keys can evict frequently used keys | stable hot keys                  |
-| TTL             | Cleans up one-off keys                                            | On its own, it has no peak protection                            | pre-dominantly one-off keys      |
-| Hybrid          | Combines peak protection with background clean up of one-off keys | More bookkeeping (use doubly linked list and heap)               | stable hot keys and one-off keys |
+| TTL             | Eviction is triggered by TTL expiring not by key access           | On its own, it has no peak protection                            | pre-dominantly one-off keys      |
+| Hybrid          | Combines peak protection with background clean up of one-off keys | More bookkeeping                                                 | stable hot keys and one-off keys |
 
 ## Assumption
 We currently assume that a key is not evicted from the cache during an in-flight `Allow` or `Wait` on that key. Eliminating this assumption requires more time and is deferred to future work.
